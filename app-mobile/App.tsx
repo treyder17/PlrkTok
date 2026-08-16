@@ -7,14 +7,17 @@ import {
   View,
   Text,
   StatusBar,
+  Pressable,
   ViewToken,
 } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import FeedCard from "./FeedCard";
 import { Listing, fetchFeed, sendInteraction } from "./api";
+import { colors, radius, spacing, type } from "./theme";
 
 const { height } = Dimensions.get("window");
 
-export default function App() {
+function Feed() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,8 +41,9 @@ export default function App() {
       if (newListings.length === 0) return;
       seenIds.current = [...seenIds.current, ...newListings.map((l) => l.id)];
       setListings((prev) => [...prev, ...newListings]);
+      setError(null);
     } catch (e) {
-      setError("Feed konnte nicht geladen werden. Läuft das Backend?");
+      setError("Feed konnte nicht geladen werden.");
     } finally {
       isLoadingMore.current = false;
       setLoading(false);
@@ -47,6 +51,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    loadMore();
+  }, [loadMore]);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    setError(null);
     loadMore();
   }, [loadMore]);
 
@@ -72,25 +82,32 @@ export default function App() {
     }
   );
 
-  if (loading) {
+  if (loading && listings.length === 0) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#fff" />
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
-  if (error) {
+  if (error && listings.length === 0) {
     return (
       <View style={styles.center}>
+        <Text style={styles.errorTitle}>Keine Verbindung</Text>
         <Text style={styles.errorText}>{error}</Text>
+        <Pressable
+          onPress={retry}
+          style={({ pressed }) => [styles.retryBtn, pressed && styles.retryBtnPressed]}
+        >
+          <Text style={styles.retryText}>Erneut versuchen</Text>
+        </Pressable>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <FlatList
         data={listings}
         keyExtractor={(item) => item.id}
@@ -101,26 +118,60 @@ export default function App() {
         decelerationRate="fast"
         onViewableItemsChanged={onViewableItemsChanged.current}
         viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
+        windowSize={3}
+        maxToRenderPerBatch={3}
+        initialNumToRender={2}
+        removeClippedSubviews
       />
     </View>
+  );
+}
+
+export default function App() {
+  // SafeAreaProvider muss laut Expo-57-Doku an der Wurzel stehen, sonst liefert
+  // useSafeAreaInsets in den Karten nur Nullen - und mit edgeToEdgeEnabled=true
+  // rutschte der Inhalt unter die Systemleisten.
+  return (
+    <SafeAreaProvider>
+      <Feed />
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.bgPrimary,
   },
   center: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.bgPrimary,
     justifyContent: "center",
     alignItems: "center",
+    padding: spacing.xl,
+  },
+  errorTitle: {
+    ...type.title,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
   errorText: {
-    color: "#f87171",
-    fontSize: 16,
+    ...type.body,
+    color: colors.textSecondary,
     textAlign: "center",
-    padding: 20,
+    marginBottom: spacing.xl,
+  },
+  retryBtn: {
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+  },
+  retryBtnPressed: {
+    backgroundColor: colors.accentPressed,
+  },
+  retryText: {
+    ...type.seller,
+    color: colors.textPrimary,
   },
 });
