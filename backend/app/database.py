@@ -12,7 +12,11 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+# pool_pre_ping: zwischen zwei Sync-Zyklen idlet der Dienst 10 Minuten. Postgres bzw.
+# Railways Netzwerkschicht schliessen solche Verbindungen serverseitig, die bleiben
+# aber als tote Eintraege im Pool liegen -> sporadische 500er, die sich nicht
+# reproduzieren lassen. Der Pre-Ping wirft tote Verbindungen vorher weg.
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
