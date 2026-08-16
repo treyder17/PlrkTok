@@ -126,7 +126,10 @@ def fetch_category_items(game_slug: str, limit: int = 50):
                 "image_url": image_url,
                 "seller_username": seller_username,
                 "seller_id": item.user.id if getattr(item, "user", None) else None,
-                "profile_url": f"https://playerok.com/item/{item.slug}",
+                # Playerok-Artikelseiten liegen unter /products/<slug>, nicht /item/<slug>.
+                # playerokapi baut selbst keine Seiten-URLs, der alte Pfad war geraten
+                # und lief deshalb in "Страница не найдена".
+                "profile_url": f"https://playerok.com/products/{item.slug}",
                 "popularity_score": item.views_counter or 0,
                 "created_at_raw": item.created_at,
             })
@@ -143,6 +146,10 @@ def sync_category(db: Session, game_slug: str, limit: int = 50):
         if existing:
             existing.price = item["price"]
             existing.popularity_score = item.get("popularity_score", existing.popularity_score)
+            # profile_url mitziehen: sonst blieben einmal falsch gespeicherte Links
+            # fuer immer stehen, weil wir bekannte Angebote sonst nur preislich anfassen.
+            existing.profile_url = item["profile_url"]
+            existing.image_url = item.get("image_url") or existing.image_url
             existing.fetched_at = datetime.utcnow()
         else:
             listing = Listing(

@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 from .models import Base
 
@@ -22,6 +22,34 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_product_urls()
+
+
+def _migrate_product_urls():
+    """
+    Einmalige Reparatur: Artikel-Links wurden frueher als /item/<slug> gespeichert,
+    Playerok bedient die Seiten aber unter /products/<slug>. Alte Zeilen wuerden
+    sonst dauerhaft in "Страница не найдена" laufen, weil der Sync bekannte
+    Angebote nicht neu anlegt. Laeuft bei jedem Start, ist aber nach dem ersten
+    Mal ein No-Op.
+    """
+    from sqlalchemy import update
+    from .models import Listing
+
+    with engine.begin() as conn:
+        result = conn.execute(
+            update(Listing)
+            .where(Listing.profile_url.like("https://playerok.com/item/%"))
+            .values(
+                profile_url=func.replace(
+                    Listing.profile_url,
+                    "https://playerok.com/item/",
+                    "https://playerok.com/products/",
+                )
+            )
+        )
+        if result.rowcount:
+            print(f"[migration] {result.rowcount} Artikel-Links auf /products/ umgestellt")
 
 
 def get_db():
