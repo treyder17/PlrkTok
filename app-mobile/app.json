@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "app-mobile",
-    "slug": "app-mobile",
+    "name": "PlrkTok",
+    "slug": "plrktok",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -17,7 +17,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.appmobile"
+      "package": "com.plrktok.appmobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
