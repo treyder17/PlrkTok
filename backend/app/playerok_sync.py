@@ -20,6 +20,7 @@ WICHTIG: ddg5 "stirbt", wenn sich IP oder User-Agent ändern (siehe playerokapi-
 Für Dauerbetrieb ggf. auf feste Server-IP + gleichbleibenden User-Agent achten.
 """
 import os
+import shutil
 import time
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -52,6 +53,25 @@ DELAY_BETWEEN_SUBCATEGORIES = 1.5  # Sekunden Pause zwischen Unterkategorien ein
 _account = None
 
 
+def _ensure_cacert():
+    """
+    Workaround für einen Packaging-Bug in playerokapi: das Paket erwartet eine
+    cacert.pem-Datei in seinem eigenen Ordner, die aber bei 'pip install git+...'
+    nicht immer mit installiert wird (fehlt z.B. auf Linux-Servern wie Railway).
+    Wir kopieren stattdessen die CA-Zertifikate von 'certifi' dorthin, die
+    garantiert korrekt installiert werden.
+    """
+    import playerokapi
+    import certifi
+
+    target = os.path.join(os.path.dirname(playerokapi.__file__), "cacert.pem")
+    if not os.path.exists(target):
+        try:
+            shutil.copyfile(certifi.where(), target)
+        except (PermissionError, OSError) as e:
+            print(f"[playerok_sync] Konnte cacert.pem nicht anlegen: {e}")
+
+
 def get_account():
     """Lazy-init des Playerok Accounts, damit das Backend auch ohne Credentials startet
     (nur /sync würde dann fehlschlagen, nicht die ganze App)."""
@@ -59,6 +79,7 @@ def get_account():
     if _account is not None:
         return _account
 
+    _ensure_cacert()
     from playerokapi.account import Account
 
     if not PLAYEROK_TOKEN and not PLAYEROK_COOKIES:
