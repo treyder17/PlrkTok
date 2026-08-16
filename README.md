@@ -57,11 +57,16 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Testen: http://localhost:8000/health sollte `{"status": "ok"}` zeigen.
 
-Der Server synct jetzt automatisch alle 5 Minuten neue Angebote im Hintergrund
+Der Server synct jetzt automatisch alle 10 Minuten neue Angebote im Hintergrund
 (siehe `SYNC_INTERVAL_SECONDS` in `app/main.py`). Für einen sofortigen manuellen Sync:
 ```bash
-curl -X POST http://localhost:8000/sync
+export SYNC_TOKEN="dein-geheimes-token"   # muss auf dem Server gesetzt sein
+curl -X POST -H "X-Sync-Token: $SYNC_TOKEN" http://localhost:8000/sync
 ```
+
+`POST /sync` ist absichtlich fail-closed: ohne gesetztes `SYNC_TOKEN` antwortet der
+Endpoint mit 503, bei falschem/fehlendem Header mit 401. Der automatische
+Hintergrund-Sync läuft davon unabhängig weiter.
 
 Falls die Zugangsdaten fehlen oder falsch sind, läuft der Server trotzdem weiter
 (der Sync loggt nur einen Fehler) – so kannst du das Backend auch ohne Playerok-Login
@@ -85,6 +90,7 @@ Spiele/Apps, die im Feed auftauchen sollen.
 4. Environment-Variablen beim Backend-Service setzen (Settings → Variables):
    - `PLAYEROK_COOKIES` = dein kompletter Cookie-String
    - `PLAYEROK_USER_AGENT` = dein Browser-User-Agent
+   - `SYNC_TOKEN` = ein selbst ausgedachtes Geheimnis (z.B. `python -c "import secrets;print(secrets.token_urlsafe(32))"`)
 5. Nach dem Deploy bekommst du eine öffentliche URL wie `https://dein-projekt.up.railway.app`
 6. In `app-mobile/api.ts`: `API_BASE` auf genau diese URL setzen (mit `https://`, ohne Port)
 

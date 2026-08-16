@@ -1,6 +1,5 @@
-// Passe die Base-URL an: beim Testen mit Android Emulator ist localhost = 10.0.2.2
-// Bei echtem Gerät im selben WLAN: IP deines Rechners, z.B. http://192.168.1.50:8000
-export const API_BASE = "http://10.0.2.2:8000";
+// Öffentliches Backend auf Railway - funktioniert von überall, nicht nur im lokalen WLAN
+export const API_BASE = "https://plrktok-production.up.railway.app";
 
 export type Listing = {
   id: string;
@@ -16,8 +15,13 @@ export type Listing = {
 
 const USER_ID = "device_local_user"; // später durch echte User-ID / Device-ID ersetzen
 
+// Jede ID ist ein 36-Zeichen-UUID. Ungebremst wird die URL nach ein paar hundert
+// Swipes so lang, dass der Server mit 414 (URI Too Long) abbricht -> auf die
+// zuletzt gesehenen begrenzen.
+const MAX_EXCLUDE_IDS = 200;
+
 export async function fetchFeed(excludeIds: string[]): Promise<Listing[]> {
-  const exclude = excludeIds.join(",");
+  const exclude = excludeIds.slice(-MAX_EXCLUDE_IDS).join(",");
   const res = await fetch(
     `${API_BASE}/feed?user_id=${USER_ID}&exclude=${encodeURIComponent(exclude)}&limit=20`
   );

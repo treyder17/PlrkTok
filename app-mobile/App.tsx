@@ -21,8 +21,18 @@ export default function App() {
   const seenIds = useRef<string[]>([]);
   const currentIndex = useRef(0);
   const viewStartTime = useRef<number>(Date.now());
+  // Spiegel von `listings` als Ref: onViewableItemsChanged darf laut FlatList nicht
+  // wechseln, hängt also für immer am ersten Render fest und sähe sonst nur [].
+  const listingsRef = useRef<Listing[]>([]);
+  const isLoadingMore = useRef(false);
+
+  useEffect(() => {
+    listingsRef.current = listings;
+  }, [listings]);
 
   const loadMore = useCallback(async () => {
+    if (isLoadingMore.current) return; // sonst feuern mehrere Requests parallel
+    isLoadingMore.current = true;
     try {
       const newListings = await fetchFeed(seenIds.current);
       if (newListings.length === 0) return;
@@ -31,6 +41,7 @@ export default function App() {
     } catch (e) {
       setError("Feed konnte nicht geladen werden. Läuft das Backend?");
     } finally {
+      isLoadingMore.current = false;
       setLoading(false);
     }
   }, []);
@@ -43,18 +54,19 @@ export default function App() {
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       if (viewableItems.length === 0) return;
       const newIndex = viewableItems[0].index ?? 0;
+      const current = listingsRef.current;
 
       // Dwell time für vorheriges Item tracken
-      if (currentIndex.current !== newIndex && listings[currentIndex.current]) {
+      if (currentIndex.current !== newIndex && current[currentIndex.current]) {
         const dwell = Date.now() - viewStartTime.current;
-        sendInteraction(listings[currentIndex.current].id, "view", dwell);
+        sendInteraction(current[currentIndex.current].id, "view", dwell);
       }
 
       currentIndex.current = newIndex;
       viewStartTime.current = Date.now();
 
       // Nachladen, wenn wir uns dem Ende nähern
-      if (newIndex >= listings.length - 5) {
+      if (newIndex >= current.length - 5) {
         loadMore();
       }
     }
