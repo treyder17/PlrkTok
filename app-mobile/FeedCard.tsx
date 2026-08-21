@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,9 @@ import {
   Pressable,
   Dimensions,
   Linking,
+  Animated,
 } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Listing, sendInteraction } from "./api";
@@ -20,13 +22,32 @@ const TAB_BAR_SPACE = 64;
 
 export default function FeedCard({ item }: { item: Listing }) {
   const insets = useSafeAreaInsets();
+  const [liked, setLiked] = useState(false);
+  const pop = useRef(new Animated.Value(1)).current;
 
-  const openProfile = () => {
+  const openProfile = useCallback(() => {
     sendInteraction(item.id, "profile_tap");
     Linking.openURL(item.profile_url);
-  };
+  }, [item.id, item.profile_url]);
 
-  const onLike = () => sendInteraction(item.id, "like");
+  const onLike = useCallback(() => {
+    const next = !liked;
+    setLiked(next);
+
+    // Nur das Setzen melden. Ein erneutes "like" beim Abwaehlen wuerde dem
+    // Algorithmus sonst doppeltes Interesse signalisieren.
+    if (next) sendInteraction(item.id, "like");
+
+    // Kurzer Puls, damit der Tap sich bestaetigt anfuehlt. Vorher passierte
+    // sichtbar nichts - der Knopf wirkte deshalb kaputt.
+    pop.setValue(0.8);
+    Animated.spring(pop, {
+      toValue: 1,
+      friction: 3,
+      tension: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [liked, item.id, pop]);
 
   return (
     <View style={styles.card}>
@@ -34,11 +55,10 @@ export default function FeedCard({ item }: { item: Listing }) {
         <>
           {/*
             Die API liefert nur eine 300px-Thumbnail mit signierter URL - groesser
-            geht nicht, jede Aenderung am Pfad quittiert imgproxy mit 403. Formatfuellend
-            gezogen wird das sichtbar matschig. Deshalb der uebliche Kniff: die
-            Thumbnail stark unscharf als Hintergrund, das scharfe Original in
-            Originalproportion darueber. Die Unschaerfe liest sich als Absicht,
-            das Motiv bleibt knackig.
+            geht nicht, jede Aenderung am Pfad quittiert imgproxy mit 403.
+            Formatfuellend gezogen wird das sichtbar matschig. Deshalb der uebliche
+            Kniff: die Thumbnail stark unscharf als Hintergrund, das scharfe
+            Original in Originalproportion darueber.
           */}
           <Image
             source={{ uri: item.image_url }}
@@ -54,6 +74,7 @@ export default function FeedCard({ item }: { item: Listing }) {
         </>
       ) : (
         <View style={[styles.image, styles.imagePlaceholder]}>
+          <Ionicons name="image-outline" size={44} color={colors.textMuted} />
           <Text style={styles.placeholderText}>{item.category}</Text>
         </View>
       )}
@@ -86,7 +107,11 @@ export default function FeedCard({ item }: { item: Listing }) {
           </Text>
 
           {item.seller_username && (
-            <Pressable style={styles.sellerRow} onPress={openProfile}>
+            <Pressable
+              style={({ pressed }) => [styles.sellerRow, pressed && styles.pressed]}
+              onPress={openProfile}
+              hitSlop={6}
+            >
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
                   {item.seller_username.slice(0, 1).toUpperCase()}
@@ -97,41 +122,51 @@ export default function FeedCard({ item }: { item: Listing }) {
               </Text>
             </Pressable>
           )}
+
+          <Pressable
+            onPress={openProfile}
+            style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
+          >
+            <Text style={styles.ctaText}>Auf Playerok ansehen</Text>
+            <Ionicons name="arrow-forward" size={17} color={colors.textPrimary} />
+          </Pressable>
         </View>
 
         <View style={styles.actions}>
-          <ActionButton label="Like" glyph="♥" onPress={onLike} tint={colors.like} />
-          <ActionButton label="Ansehen" glyph="→" onPress={openProfile} />
+          <Pressable
+            onPress={onLike}
+            hitSlop={10}
+            style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
+          >
+            <Animated.View
+              style={[
+                styles.actionCircle,
+                liked && styles.actionCircleLiked,
+                { transform: [{ scale: pop }] },
+              ]}
+            >
+              <Ionicons
+                name={liked ? "heart" : "heart-outline"}
+                size={26}
+                color={liked ? colors.like : colors.textPrimary}
+              />
+            </Animated.View>
+            <Text style={styles.actionLabel}>{liked ? "Gemerkt" : "Like"}</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={openProfile}
+            hitSlop={10}
+            style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
+          >
+            <View style={styles.actionCircle}>
+              <Ionicons name="open-outline" size={24} color={colors.textPrimary} />
+            </View>
+            <Text style={styles.actionLabel}>Öffnen</Text>
+          </Pressable>
         </View>
       </View>
     </View>
-  );
-}
-
-function ActionButton({
-  label,
-  glyph,
-  onPress,
-  tint,
-}: {
-  label: string;
-  glyph: string;
-  onPress: () => void;
-  tint?: string;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-      hitSlop={8}
-    >
-      <View style={styles.actionCircle}>
-        <Text style={[styles.actionGlyph, tint ? { color: tint } : null]}>
-          {glyph}
-        </Text>
-      </View>
-      <Text style={styles.actionLabel}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -173,9 +208,10 @@ const styles = StyleSheet.create({
   },
   placeholderText: {
     color: colors.textMuted,
-    fontSize: 16,
+    fontSize: 14,
     textTransform: "uppercase",
     letterSpacing: 1,
+    marginTop: spacing.sm,
   },
   scrim: {
     position: "absolute",
@@ -219,6 +255,7 @@ const styles = StyleSheet.create({
   sellerRow: {
     flexDirection: "row",
     alignItems: "center",
+    marginBottom: spacing.lg,
   },
   avatar: {
     width: 28,
@@ -239,6 +276,24 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     flexShrink: 1,
   },
+  cta: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.sm,
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 11,
+    borderRadius: radius.pill,
+  },
+  ctaPressed: {
+    backgroundColor: colors.accentPressed,
+    transform: [{ scale: 0.97 }],
+  },
+  ctaText: {
+    ...type.seller,
+    color: colors.textPrimary,
+  },
   actions: {
     alignItems: "center",
   },
@@ -246,23 +301,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: spacing.lg,
   },
-  actionBtnPressed: {
+  pressed: {
     opacity: 0.6,
-    transform: [{ scale: 0.94 }],
   },
   actionCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255,255,255,0.14)",
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.22)",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: spacing.xs,
   },
-  actionGlyph: {
-    fontSize: 22,
-    color: colors.textPrimary,
-    lineHeight: 26,
+  actionCircleLiked: {
+    backgroundColor: "rgba(255,59,92,0.18)",
+    borderColor: colors.like,
   },
   actionLabel: {
     ...type.label,
