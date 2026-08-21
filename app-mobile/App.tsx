@@ -12,7 +12,15 @@ import {
 } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import FeedCard from "./FeedCard";
-import { Listing, fetchFeed, sendInteraction } from "./api";
+import TabBar, { TabKey } from "./TabBar";
+import Placeholder from "./Placeholder";
+import {
+  Listing,
+  fetchFeed,
+  sendInteraction,
+  setSaved,
+  fetchSavedIds,
+} from "./api";
 import { colors, radius, spacing, type } from "./theme";
 
 const { height } = Dimensions.get("window");
@@ -21,6 +29,8 @@ function Feed() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const seenIds = useRef<string[]>([]);
   const currentIndex = useRef(0);
   const viewStartTime = useRef<number>(Date.now());
@@ -32,6 +42,14 @@ function Feed() {
   useEffect(() => {
     listingsRef.current = listings;
   }, [listings]);
+
+  // Gemerkte Angebote einmal laden, damit die Merk-Knoepfe gefuellt starten
+  // statt bei jedem App-Start leer zu wirken.
+  useEffect(() => {
+    fetchSavedIds()
+      .then((ids) => setSavedIds(new Set(ids)))
+      .catch(() => {});
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (isLoadingMore.current) return; // sonst feuern mehrere Requests parallel
@@ -59,6 +77,33 @@ function Feed() {
     setError(null);
     loadMore();
   }, [loadMore]);
+
+  const toggleLike = useCallback((id: string) => {
+    setLikedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        // Nur das Setzen melden - beim Abwaehlen waere ein zweites "like"
+        // ein falsches Signal an den Algorithmus.
+        sendInteraction(id, "like");
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSave = useCallback((id: string) => {
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      const willSave = !next.has(id);
+      if (willSave) next.add(id);
+      else next.delete(id);
+      // Optimistisch: der Knopf reagiert sofort, das Backend zieht nach.
+      setSaved(id, willSave).catch(() => {});
+      return next;
+    });
+  }, []);
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -106,42 +151,108 @@ function Feed() {
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <FlatList
-        data={listings}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <FeedCard item={item} />}
-        pagingEnabled
-        showsVerticalScrollIndicator={false}
-        snapToInterval={height}
-        decelerationRate="fast"
-        onViewableItemsChanged={onViewableItemsChanged.current}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
-        windowSize={3}
-        maxToRenderPerBatch={3}
-        initialNumToRender={2}
-        removeClippedSubviews
-      />
-    </View>
+    <FlatList
+      data={listings}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) => (
+        <FeedCard
+          item={item}
+          liked={likedIds.has(item.id)}
+          saved={savedIds.has(item.id)}
+          onToggleLike={() => toggleLike(item.id)}
+          onToggleSave={() => toggleSave(item.id)}
+        />
+      )}
+      pagingEnabled
+      showsVerticalScrollIndicator={false}
+      snapToInterval={height}
+      decelerationRate="fast"
+      onViewableItemsChanged={onViewableItemsChanged.current}
+      viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
+      windowSize={3}
+      maxToRenderPerBatch={3}
+      initialNumToRender={2}
+      removeClippedSubviews
+    />
   );
 }
 
+function Screen({ tab }: { tab: TabKey }) {
+  switch (tab) {
+    case "home":
+      return <Feed />;
+    case "buyers":
+      return (
+        <Placeholder
+          icon="people-outline"
+          title="Käufer*innen"
+          body="Hier siehst du, wer bei dir gekauft hat und welche Deals offen sind. Dafür muss dein Playerok-Konto verbunden sein."
+        />
+      );
+    case "create":
+      return (
+        <Placeholder
+          icon="add-circle-outline"
+          title="Angebot erstellen"
+          body="Neue Angebote legst du direkt bei Playerok an. Sobald dein Konto verbunden ist, geht das aus der App heraus."
+          actionLabel="Bei Playerok öffnen"
+          actionUrl="https://playerok.com/"
+        />
+      );
+    case "inbox":
+      return (
+        <Placeholder
+          icon="mail-outline"
+          title="Posteingang"
+          body="Nachrichten von Käufern und Verkäufern, Zusagen und Bestätigungen. Läuft über Playeroks Chat und braucht dein verbundenes Konto."
+        />
+      );
+    case "profile":
+      return (
+        <Placeholder
+          icon="person-outline"
+          title="Profil"
+          body="Verbinde dein Playerok-Konto, um deine Angebote, Bewertungen und dein Guthaben zu sehen."
+        />
+      );
+  }
+}
+
 export default function App() {
+  const [tab, setTab] = useState<TabKey>("home");
+
   // SafeAreaProvider muss laut Expo-57-Doku an der Wurzel stehen, sonst liefert
   // useSafeAreaInsets in den Karten nur Nullen - und mit edgeToEdgeEnabled=true
   // rutschte der Inhalt unter die Systemleisten.
   return (
     <SafeAreaProvider>
-      <Feed />
+      <View style={styles.root}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <Screen tab={tab} />
+        {/*
+          Die Leiste liegt ueber dem Feed statt darunter im Flex-Fluss: die
+          Karten sind genau eine Bildschirmhoehe hoch, und snapToInterval haengt
+          daran. Ein Balken im Fluss wuerde die Karten stauchen und das
+          Einrasten beim Wischen verschieben. Die Karte haelt unten Platz frei.
+        */}
+        <View style={styles.tabBarWrap}>
+          <TabBar active={tab} onChange={setTab} />
+        </View>
+      </View>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: colors.bgPrimary,
+  },
+  tabBarWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   center: {
     flex: 1,

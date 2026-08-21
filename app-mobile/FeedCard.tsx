@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,11 @@ import {
   Pressable,
   Dimensions,
   Linking,
-  Animated,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import ActionRail from "./ActionRail";
 import { Listing, sendInteraction } from "./api";
 import { colors, radius, spacing, type, formatPrice } from "./theme";
 
@@ -20,34 +20,28 @@ const { height, width } = Dimensions.get("window");
 /** Hoehe der Tab-Leiste, die als naechstes drunter kommt - Platz schon freihalten. */
 const TAB_BAR_SPACE = 64;
 
-export default function FeedCard({ item }: { item: Listing }) {
+type Props = {
+  item: Listing;
+  liked: boolean;
+  saved: boolean;
+  onToggleLike: () => void;
+  onToggleSave: () => void;
+};
+
+export default function FeedCard({
+  item,
+  liked,
+  saved,
+  onToggleLike,
+  onToggleSave,
+}: Props) {
   const insets = useSafeAreaInsets();
-  const [liked, setLiked] = useState(false);
-  const pop = useRef(new Animated.Value(1)).current;
 
   const openProfile = useCallback(() => {
     sendInteraction(item.id, "profile_tap");
     Linking.openURL(item.profile_url);
   }, [item.id, item.profile_url]);
 
-  const onLike = useCallback(() => {
-    const next = !liked;
-    setLiked(next);
-
-    // Nur das Setzen melden. Ein erneutes "like" beim Abwaehlen wuerde dem
-    // Algorithmus sonst doppeltes Interesse signalisieren.
-    if (next) sendInteraction(item.id, "like");
-
-    // Kurzer Puls, damit der Tap sich bestaetigt anfuehlt. Vorher passierte
-    // sichtbar nichts - der Knopf wirkte deshalb kaputt.
-    pop.setValue(0.8);
-    Animated.spring(pop, {
-      toValue: 1,
-      friction: 3,
-      tension: 180,
-      useNativeDriver: true,
-    }).start();
-  }, [liked, item.id, pop]);
 
   return (
     <View style={styles.card}>
@@ -132,39 +126,13 @@ export default function FeedCard({ item }: { item: Listing }) {
           </Pressable>
         </View>
 
-        <View style={styles.actions}>
-          <Pressable
-            onPress={onLike}
-            hitSlop={10}
-            style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
-          >
-            <Animated.View
-              style={[
-                styles.actionCircle,
-                liked && styles.actionCircleLiked,
-                { transform: [{ scale: pop }] },
-              ]}
-            >
-              <Ionicons
-                name={liked ? "heart" : "heart-outline"}
-                size={26}
-                color={liked ? colors.like : colors.textPrimary}
-              />
-            </Animated.View>
-            <Text style={styles.actionLabel}>{liked ? "Gemerkt" : "Like"}</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={openProfile}
-            hitSlop={10}
-            style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
-          >
-            <View style={styles.actionCircle}>
-              <Ionicons name="open-outline" size={24} color={colors.textPrimary} />
-            </View>
-            <Text style={styles.actionLabel}>Öffnen</Text>
-          </Pressable>
-        </View>
+        <ActionRail
+          item={item}
+          liked={liked}
+          saved={saved}
+          onToggleLike={onToggleLike}
+          onToggleSave={onToggleSave}
+        />
       </View>
     </View>
   );
@@ -294,33 +262,7 @@ const styles = StyleSheet.create({
     ...type.seller,
     color: colors.textPrimary,
   },
-  actions: {
-    alignItems: "center",
-  },
-  actionBtn: {
-    alignItems: "center",
-    marginBottom: spacing.lg,
-  },
   pressed: {
     opacity: 0.6,
-  },
-  actionCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.22)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: spacing.xs,
-  },
-  actionCircleLiked: {
-    backgroundColor: "rgba(255,59,92,0.18)",
-    borderColor: colors.like,
-  },
-  actionLabel: {
-    ...type.label,
-    color: colors.textPrimary,
   },
 });

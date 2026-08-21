@@ -50,3 +50,25 @@ export async function sendInteraction(
     console.warn("Interaction fehlgeschlagen", e);
   }
 }
+
+export async function setSaved(listingId: string, saved: boolean): Promise<void> {
+  await fetch(`${API_BASE}/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: USER_ID, listing_id: listingId, saved }),
+  });
+}
+
+/** IDs der gemerkten Angebote - beim Start, damit die Merk-Knoepfe gefuellt starten. */
+export async function fetchSavedIds(): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/saved/ids?user_id=${USER_ID}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data.ids) ? data.ids : [];
+}
+
+export async function fetchSaved(): Promise<Listing[]> {
+  const res = await fetch(`${API_BASE}/saved?user_id=${USER_ID}`);
+  if (!res.ok) throw new Error("Gemerkte Angebote konnten nicht geladen werden");
+  return res.json();
+}
