@@ -1,7 +1,7 @@
 """
 Datenmodelle für den Playerok-Feed.
 """
-from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey
+from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 from datetime import datetime
 
@@ -37,6 +37,19 @@ class Interaction(Base):
     category = Column(String, index=True)
     action = Column(String)  # "view" | "skip" | "like" | "profile_tap"
     dwell_time_ms = Column(Integer, default=0)  # wie lange angeschaut
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SavedItem(Base):
+    """Vom User gemerktes Angebot. Eigene Tabelle statt eines Interaction-Eintrags,
+    weil Merken ein Zustand ist (an/aus) und kein Ereignis - mit Interactions
+    muesste man sonst das jeweils letzte Ereignis pro Angebot auswerten."""
+    __tablename__ = "saved_items"
+    __table_args__ = (UniqueConstraint("user_id", "listing_id", name="uq_saved_user_listing"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, index=True, nullable=False)
+    listing_id = Column(String, ForeignKey("listings.id"), index=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

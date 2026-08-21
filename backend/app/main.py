@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from .database import get_db, init_db, SessionLocal
-from .models import Listing
+from .models import Listing, SavedItem
 from .algorithm import build_feed, record_interaction
 from .playerok_sync import sync_all_categories
 
@@ -97,6 +97,57 @@ def post_interaction(payload: InteractionIn, db: Session = Depends(get_db)):
         return {"ok": False, "error": "listing not found"}
     record_interaction(db, payload.user_id, listing, payload.action, payload.dwell_time_ms)
     return {"ok": True}
+
+
+class SaveIn(BaseModel):
+    user_id: str
+    listing_id: str
+    saved: bool
+
+
+@app.post("/save")
+def post_save(payload: SaveIn, db: Session = Depends(get_db)):
+    """Angebot merken oder Merken zuruecknehmen. Idempotent - zweimal dasselbe
+    Setzen aendert nichts, damit ein doppelter Tap keinen Fehler wirft."""
+    listing = db.query(Listing).filter(Listing.id == payload.listing_id).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="listing not found")
+
+    existing = (
+        db.query(SavedItem)
+        .filter(SavedItem.user_id == payload.user_id, SavedItem.listing_id == payload.listing_id)
+        .first()
+    )
+
+    if payload.saved and existing is None:
+        db.add(SavedItem(user_id=payload.user_id, listing_id=payload.listing_id))
+        # Merken ist ein starkes Interessesignal - wie ein Like in den Algorithmus geben.
+        record_interaction(db, payload.user_id, listing, "like", 0)
+    elif not payload.saved and existing is not None:
+        db.delete(existing)
+
+    db.commit()
+    return {"ok": True, "saved": payload.saved}
+
+
+@app.get("/saved", response_model=list[ListingOut])
+def get_saved(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """Alle gemerkten Angebote eines Users, neueste zuerst."""
+    return (
+        db.query(Listing)
+        .join(SavedItem, SavedItem.listing_id == Listing.id)
+        .filter(SavedItem.user_id == user_id)
+        .order_by(SavedItem.created_at.desc())
+        .all()
+    )
+
+
+@app.get("/saved/ids")
+def get_saved_ids(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """Nur die IDs - die App braucht das beim Start, um die Merk-Knoepfe
+    korrekt gefuellt zu zeichnen, ohne alle Angebote nachzuladen."""
+    rows = db.query(SavedItem.listing_id).filter(SavedItem.user_id == user_id).all()
+    return {"ids": [r[0] for r in rows]}
 
 
 def require_sync_token(x_sync_token: Optional[str] = Header(None)):
