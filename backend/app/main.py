@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from .database import get_db, init_db, SessionLocal
-from .models import Listing, SavedItem, Like, ShareEvent
+from .models import Listing, SavedItem, Like, ShareEvent, ListingTranslation
 from .algorithm import build_feed, record_interaction, count_engagement
 from .playerok_sync import sync_all_categories
 
@@ -89,11 +89,12 @@ def get_feed(
     user_id: str = Query(...),
     exclude: str = Query("", description="Komma-separierte Liste bereits gesehener IDs"),
     limit: int = Query(20, le=50),
+    lang: str = Query("ru", pattern="^(de|en|ru)$"),
     db: Session = Depends(get_db),
 ):
     exclude_ids = [x for x in exclude.split(",") if x]
     listings = build_feed(db, user_id, exclude_ids, limit)
-    return with_counts(db, listings)
+    return with_counts(db, listings, lang)
 
 
 @app.post("/interact")
@@ -105,16 +106,37 @@ def post_interaction(payload: InteractionIn, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-def with_counts(db: Session, listings: list[Listing]) -> list[dict]:
-    """Angebote in Ausgabe-Dicts mit Reichweitenzahlen verwandeln."""
-    counts = count_engagement(db, [l.id for l in listings])
+def _titles_for(db: Session, listing_ids: list[str], lang: str) -> dict[str, str]:
+    """Uebersetzte Titel nachschlagen. Russisch ist die Quellsprache der
+    Angebote und braucht keine Uebersetzung."""
+    if lang == "ru" or not listing_ids:
+        return {}
+    rows = (
+        db.query(ListingTranslation.listing_id, ListingTranslation.title)
+        .filter(
+            ListingTranslation.lang == lang,
+            ListingTranslation.listing_id.in_(listing_ids),
+        )
+        .all()
+    )
+    return {lid: title for lid, title in rows}
+
+
+def with_counts(db: Session, listings: list[Listing], lang: str = "ru") -> list[dict]:
+    """Angebote in Ausgabe-Dicts mit Reichweitenzahlen und Titel in der
+    gewuenschten Sprache verwandeln."""
+    ids = [l.id for l in listings]
+    counts = count_engagement(db, ids)
+    titles = _titles_for(db, ids, lang)
     out = []
     for l in listings:
         c = counts.get(l.id, {})
         out.append(
             {
                 "id": l.id,
-                "title": l.title,
+                # Faellt auf den Originaltitel zurueck, solange keine
+                # Uebersetzung vorliegt - besser als eine Luecke im Feed.
+                "title": titles.get(l.id, l.title),
                 "description": l.description,
                 "price": l.price,
                 "currency": l.currency,
@@ -187,6 +209,7 @@ def post_share(payload: ShareIn, db: Session = Depends(get_db)):
 def search(
     q: str = Query(..., min_length=1),
     limit: int = Query(30, le=50),
+    lang: str = Query("ru", pattern="^(de|en|ru)$"),
     db: Session = Depends(get_db),
 ):
     """Volltextsuche ueber Titel und Kategorie.
@@ -202,7 +225,7 @@ def search(
         .limit(limit)
         .all()
     )
-    return with_counts(db, rows)
+    return with_counts(db, rows, lang)
 
 
 class SaveIn(BaseModel):
@@ -238,7 +261,11 @@ def post_save(payload: SaveIn, db: Session = Depends(get_db)):
 
 
 @app.get("/saved", response_model=list[ListingOut])
-def get_saved(user_id: str = Query(...), db: Session = Depends(get_db)):
+def get_saved(
+    user_id: str = Query(...),
+    lang: str = Query("ru", pattern="^(de|en|ru)$"),
+    db: Session = Depends(get_db),
+):
     """Alle gemerkten Angebote eines Users, neueste zuerst."""
     rows = (
         db.query(Listing)
@@ -247,7 +274,7 @@ def get_saved(user_id: str = Query(...), db: Session = Depends(get_db)):
         .order_by(SavedItem.created_at.desc())
         .all()
     )
-    return with_counts(db, rows)
+    return with_counts(db, rows, lang)
 
 
 @app.get("/saved/ids")

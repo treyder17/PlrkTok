@@ -40,6 +40,23 @@ class Interaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class ListingTranslation(Base):
+    """Uebersetzter Titel eines Angebots, je Sprache eine Zeile.
+
+    Eigene Tabelle statt Spalten wie title_de/title_en auf Listing: create_all
+    fuegt bestehenden Tabellen keine Spalten hinzu, auf dem schon deployten
+    Postgres wuerden sie also fehlen. Ausserdem kommt so eine vierte Sprache
+    spaeter ohne Schemaaenderung dazu."""
+    __tablename__ = "listing_translations"
+    __table_args__ = (UniqueConstraint("listing_id", "lang", name="uq_translation_listing_lang"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    listing_id = Column(String, ForeignKey("listings.id"), index=True, nullable=False)
+    lang = Column(String(5), index=True, nullable=False)
+    title = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Like(Base):
     """Ein Like eines Users. Eigene Tabelle wie SavedItem, weil ein Like ein
     Zustand ist (an/aus) - aus dem Interaction-Log liesse sich der aktuelle Stand

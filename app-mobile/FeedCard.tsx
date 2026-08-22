@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ActionRail from "./ActionRail";
 import { Listing, sendInteraction } from "./api";
 import { colors, radius, spacing, type, formatPrice } from "./theme";
+import { useI18n } from "./i18n";
 
 const { height, width } = Dimensions.get("window");
 
@@ -36,6 +37,7 @@ export default function FeedCard({
   onToggleSave,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
 
   const openProfile = useCallback(() => {
     sendInteraction(item.id, "profile_tap");
@@ -121,7 +123,7 @@ export default function FeedCard({
             onPress={openProfile}
             style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
           >
-            <Text style={styles.ctaText}>Auf Playerok ansehen</Text>
+            <Text style={styles.ctaText}>{t("feed.cta")}</Text>
             <Ionicons name="arrow-forward" size={17} color={colors.textPrimary} />
           </Pressable>
         </View>

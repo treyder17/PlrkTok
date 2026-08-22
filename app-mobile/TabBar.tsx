@@ -3,22 +3,23 @@ import { View, Text, StyleSheet, Pressable } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing, type } from "./theme";
+import { useI18n } from "./i18n";
 
 export type TabKey = "home" | "buyers" | "create" | "inbox" | "profile";
 
 type Tab = {
   key: TabKey;
-  label: string;
+  labelKey: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
   iconActive: React.ComponentProps<typeof Ionicons>["name"];
 };
 
 const TABS: Tab[] = [
-  { key: "home", label: "Home", icon: "home-outline", iconActive: "home" },
-  { key: "buyers", label: "Käufer*innen", icon: "people-outline", iconActive: "people" },
-  { key: "create", label: "", icon: "add", iconActive: "add" },
-  { key: "inbox", label: "Posteingang", icon: "mail-outline", iconActive: "mail" },
-  { key: "profile", label: "Profil", icon: "person-outline", iconActive: "person" },
+  { key: "home", labelKey: "tab.home", icon: "home-outline", iconActive: "home" },
+  { key: "buyers", labelKey: "tab.buyers", icon: "people-outline", iconActive: "people" },
+  { key: "create", labelKey: "", icon: "add", iconActive: "add" },
+  { key: "inbox", labelKey: "tab.inbox", icon: "mail-outline", iconActive: "mail" },
+  { key: "profile", labelKey: "tab.profile", icon: "person-outline", iconActive: "person" },
 ];
 
 export default function TabBar({
@@ -29,6 +30,7 @@ export default function TabBar({
   onChange: (key: TabKey) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
 
   return (
     <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
@@ -65,7 +67,7 @@ export default function TabBar({
               style={[styles.label, isActive ? styles.labelActive : null]}
               numberOfLines={1}
             >
-              {tab.label}
+              {tab.labelKey ? t(tab.labelKey) : ""}
             </Text>
           </Pressable>
         );

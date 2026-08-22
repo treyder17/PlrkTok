@@ -197,4 +197,58 @@ def sync_all_categories(db: Session):
                 break
     if errors:
         print("Sync-Fehler:", errors)
+
+    # Uebersetzen nach dem Einsammeln. Faellt es aus, bleibt der Sync gueltig -
+    # der Feed zeigt dann Originaltitel.
+    try:
+        translate_missing(db)
+    except Exception as e:
+        print(f"[translate] uebersprungen: {e}")
+
     return total_new
+
+
+def translate_missing(db: Session, max_per_lang: int = 120) -> int:
+    """
+    Uebersetzt Titel, fuer die noch keine Uebersetzung vorliegt.
+
+    Absichtlich gedeckelt: beim ersten Lauf haetten wir sonst hunderte Titel in
+    einem Rutsch, was den Sync unnoetig lange blockiert. Ueber mehrere Laeufe
+    verteilt ist der Bestand nach kurzer Zeit vollstaendig, und danach fallen nur
+    noch die neuen Angebote an.
+    """
+    from .models import ListingTranslation
+    from . import translate
+
+    if not translate.is_configured():
+        return 0
+
+    done = 0
+    for lang in translate.TARGETS:
+        have = {
+            row[0]
+            for row in db.query(ListingTranslation.listing_id)
+            .filter(ListingTranslation.lang == lang)
+            .all()
+        }
+        pending = [
+            l for l in db.query(Listing.id, Listing.title).all() if l[0] not in have
+        ][:max_per_lang]
+        if not pending:
+            continue
+
+        for batch in translate.chunks([p for p in pending]):
+            texts = [p[1] for p in batch]
+            out = translate.translate_batch(texts, lang)
+            if out is None:
+                break  # Kontingent oder Netzfehler - diesen Lauf abbrechen
+            for (listing_id, _), translated in zip(batch, out):
+                db.add(
+                    ListingTranslation(listing_id=listing_id, lang=lang, title=translated)
+                )
+                done += 1
+            db.commit()
+
+    if done:
+        print(f"[translate] {done} Titel uebersetzt")
+    return done

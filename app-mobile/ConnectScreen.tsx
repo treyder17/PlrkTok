@@ -9,6 +9,7 @@ import {
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing, type } from "./theme";
+import { useI18n } from "./i18n";
 
 export default function ConnectScreen({
   onAccept,
@@ -20,6 +21,7 @@ export default function ConnectScreen({
   error: string | null;
 }) {
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
 
   return (
     <ScrollView
@@ -39,11 +41,10 @@ export default function ConnectScreen({
         </View>
       </View>
 
-      <Text style={styles.title}>PlrkTok mit deinem Playerok-Konto verbinden?</Text>
+      <Text style={styles.title}>{t("consent.title")}</Text>
 
       <Text style={styles.body}>
-        Wir öffnen dafür die echte Anmeldeseite von playerok.com. Du gibst deine
-        Zugangsdaten dort ein, nicht bei uns.
+        {t("consent.body")}
       </Text>
 
       {/*
@@ -52,12 +53,12 @@ export default function ConnectScreen({
         Anfrage von PlrkTok, nicht von Playerok, und das soll man sehen.
       */}
       <View style={styles.factBox}>
-        <Fact icon="phone-portrait-outline" text="Deine Anmeldedaten bleiben auf diesem Gerät. Sie werden nicht an unseren Server geschickt." />
-        <Fact icon="eye-outline" text="PlrkTok liest damit dein Profil, dein Guthaben und deine Nachrichten." />
-        <Fact icon="log-out-outline" text="Du kannst die Verbindung jederzeit im Profil wieder trennen." />
+        <Fact icon="phone-portrait-outline" text={t("consent.fact1")} />
+        <Fact icon="eye-outline" text={t("consent.fact2")} />
+        <Fact icon="log-out-outline" text={t("consent.fact3")} />
         <Fact
           icon="alert-circle-outline"
-          text="PlrkTok ist kein offizielles Playerok-Produkt. Playerok hat diese App nicht geprüft oder freigegeben."
+          text={t("consent.fact4")}
           warn
         />
       </View>
@@ -68,18 +69,18 @@ export default function ConnectScreen({
         onPress={onAccept}
         style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
       >
-        <Text style={styles.primaryText}>Autorisieren</Text>
+        <Text style={styles.primaryText}>{t("consent.authorize")}</Text>
       </Pressable>
 
       <Pressable
         onPress={onDecline}
         style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
       >
-        <Text style={styles.secondaryText}>Ablehnen</Text>
+        <Text style={styles.secondaryText}>{t("consent.decline")}</Text>
       </Pressable>
 
       <Text style={styles.declineHint}>
-        Ohne Verbindung kannst du den Feed weiter normal benutzen.
+        {t("consent.hint")}
       </Text>
     </ScrollView>
   );

@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from "react";
 import {
+  Linking,
   View,
   Text,
   Image,
@@ -20,6 +21,7 @@ import {
   parseViewer,
 } from "./playerok";
 import { colors, radius, spacing, type, formatPrice } from "./theme";
+import { useI18n, LANGS } from "./i18n";
 
 const PLAYEROK_URL = "https://playerok.com/";
 
@@ -39,6 +41,7 @@ export default function ProfileScreen() {
   const [stage, setStage] = useState<Stage>({ kind: "probing" });
   const webRef = useRef<WebView>(null);
   const insets = useSafeAreaInsets();
+  const { t: tBanner } = useI18n();
   // Wir fragen nach jedem Seitenwechsel erneut ab; ohne Sperre wuerden sich die
   // Antworten ueberlappen und der Bildschirm flackern.
   const pending = useRef(false);
@@ -120,6 +123,29 @@ export default function ProfileScreen() {
           sharedCookiesEnabled
           thirdPartyCookiesEnabled
           originWhitelist={["https://*.playerok.com", "https://playerok.com"]}
+          /*
+            Ohne diese Einstellungen war der WebView praktisch unbenutzbar.
+            Playerok ist eine schwere Next.js-Anwendung und braucht:
+            - domStorage: localStorage/sessionStorage, sonst bricht Apollo ab
+            - mobiler User-Agent: sonst liefert Playerok das Desktop-Layout
+            - Popup-Fenster: Anmeldung ueber Google/Telegram oeffnet ein Fenster
+            - kein Auto-Zoom auf Eingabefelder, sonst springt das Layout
+          */
+          domStorageEnabled
+          javaScriptEnabled
+          javaScriptCanOpenWindowsAutomatically
+          setSupportMultipleWindows={false}
+          userAgent="Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36"
+          allowsBackForwardNavigationGestures
+          pullToRefreshEnabled
+          startInLoadingState
+          renderLoading={() => (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" color={colors.accent} />
+            </View>
+          )}
+          cacheEnabled
+          mediaPlaybackRequiresUserAction
         />
       </View>
 
@@ -127,9 +153,16 @@ export default function ProfileScreen() {
         <View style={[styles.banner, { paddingTop: insets.top + spacing.sm }]}>
           <Text style={styles.bannerText}>
             {stage.kind === "login"
-              ? "Melde dich bei Playerok an. Danach geht es automatisch weiter."
-              : "Melde dich hier bei Playerok ab, um die Verbindung zu trennen."}
+              ? tBanner("login.hint")
+              : tBanner("logout.hint")}
           </Text>
+          <Pressable
+            onPress={() => Linking.openURL(PLAYEROK_URL)}
+            hitSlop={10}
+            style={styles.bannerBtn}
+          >
+            <Ionicons name="open-outline" size={18} color={colors.textPrimary} />
+          </Pressable>
           <Pressable onPress={() => setStage({ kind: "probing" })} hitSlop={10}>
             <Ionicons name="close" size={24} color={colors.textPrimary} />
           </Pressable>
@@ -150,6 +183,12 @@ export default function ProfileScreen() {
             }}
             onLogout={() => setStage({ kind: "logout" })}
           />
+          {/* Sprachwahl unabhaengig vom Anmeldestatus erreichbar */}
+          {(stage.kind === "consent" || stage.kind === "connected") && (
+            <View style={styles.langAnchor}>
+              <LanguagePicker />
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -171,6 +210,8 @@ function Content({
   onRetry: () => void;
   onLogout: () => void;
 }) {
+  const { t } = useI18n();
+
   if (stage.kind === "probing") {
     return (
       <View style={styles.center}>
@@ -192,7 +233,7 @@ function Content({
           onPress={onRetry}
           style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
         >
-          <Text style={styles.primaryText}>Erneut versuchen</Text>
+          <Text style={styles.primaryText}>{t("profile.reconnect")}</Text>
         </Pressable>
       </View>
     );
@@ -235,18 +276,18 @@ function Content({
 
       <View style={styles.statRow}>
         <Stat
-          label="Guthaben"
+          label={t("profile.balance")}
           value={viewer.balanceValue !== null ? formatPrice(viewer.balanceValue, "RUB") : "–"}
         />
-        <Stat label="Bewertungen" value={viewer.testimonialCounter?.toString() ?? "–"} />
-        <Stat label="Ungelesen" value={viewer.unreadChatsCounter?.toString() ?? "–"} />
+        <Stat label={t("profile.reviews")} value={viewer.testimonialCounter?.toString() ?? "–"} />
+        <Stat label={t("profile.unread")} value={viewer.unreadChatsCounter?.toString() ?? "–"} />
       </View>
 
       {viewer.canPublishItems === false && (
         <View style={styles.notice}>
           <Ionicons name="information-circle-outline" size={19} color={colors.textSecondary} />
           <Text style={styles.noticeText}>
-            Playerok erlaubt diesem Konto derzeit kein Veröffentlichen von Angeboten.
+            {t("profile.cannotPublish")}
           </Text>
         </View>
       )}
@@ -261,13 +302,41 @@ function Content({
         style={({ pressed }) => [styles.dangerBtn, pressed && styles.pressed]}
       >
         <Ionicons name="log-out-outline" size={19} color="#f87171" />
-        <Text style={styles.dangerText}>Bei Playerok abmelden</Text>
+        <Text style={styles.dangerText}>{t("profile.logout")}</Text>
       </Pressable>
       <Text style={styles.hint}>
-        PlrkTok speichert deine Anmeldung nicht selbst. Sie liegt im Browser-Speicher
-        dieser App und endet, sobald du dich bei Playerok abmeldest.
+        {t("profile.logoutHint")}
       </Text>
     </ScrollView>
+  );
+}
+
+function LanguagePicker() {
+  const { lang, setLang, t } = useI18n();
+  return (
+    <View style={styles.langBox}>
+      <Text style={styles.langTitle}>{t("profile.language")}</Text>
+      <View style={styles.langRow}>
+        {LANGS.map((l) => {
+          const active = l.key === lang;
+          return (
+            <Pressable
+              key={l.key}
+              onPress={() => setLang(l.key)}
+              style={({ pressed }) => [
+                styles.langChip,
+                active && styles.langChipActive,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.langChipText, active && styles.langChipTextActive]}>
+                {l.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -311,6 +380,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSecondary,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
+  },
+  bannerBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.bgTertiary,
+    justifyContent: "center",
+    alignItems: "center",
   },
   bannerText: {
     ...type.body,
@@ -403,5 +480,25 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 18,
   },
+  langAnchor: { position: "absolute", left: 0, right: 0, bottom: 90, paddingHorizontal: spacing.lg },
+  langBox: { alignItems: "center" },
+  langTitle: {
+    ...type.label,
+    fontSize: 10,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    marginBottom: spacing.sm,
+  },
+  langRow: { flexDirection: "row", gap: spacing.sm },
+  langChip: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  langChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  langChipText: { ...type.label, fontSize: 12, color: colors.textSecondary },
+  langChipTextActive: { color: colors.textPrimary },
   pressed: { opacity: 0.6 },
 });

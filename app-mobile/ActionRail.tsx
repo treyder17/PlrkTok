@@ -1,16 +1,9 @@
-import React, { useCallback, useRef } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Animated,
-  Share,
-  Alert,
-} from "react-native";
+import React, { useCallback, useRef, useState } from "react";
+import { View, Text, StyleSheet, Pressable, Animated, Share, Alert } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { Listing, sendInteraction, setSaved } from "./api";
-import { colors, spacing, type, formatPrice } from "./theme";
+import { Listing, sendShare } from "./api";
+import { colors, spacing, type, formatPrice, formatCount } from "./theme";
+import { useI18n } from "./i18n";
 
 type Props = {
   item: Listing;
@@ -21,7 +14,8 @@ type Props = {
 };
 
 /**
- * Die Aktionsleiste rechts, wie bei TikTok: Like, Kommentare, Merken, Teilen.
+ * Die Aktionsleiste rechts, wie bei TikTok: Like, Fragen, Merken, Teilen -
+ * jeweils mit der Zahl ueber alle PlrkTok-Nutzer.
  */
 export default function ActionRail({
   item,
@@ -30,48 +24,67 @@ export default function ActionRail({
   onToggleLike,
   onToggleSave,
 }: Props) {
+  const { t } = useI18n();
+  const [shareBump, setShareBump] = useState(0);
+
+  /*
+    Die Server-Zahl enthaelt den eigenen Like schon mit, falls er beim Laden
+    bestand. Die Anzeige darf daher nicht stumpf +1 rechnen, sondern nur die
+    Differenz zum Ausgangszustand - sonst springt sie falsch, wenn man ein
+    bereits geliktes Angebot abwaehlt.
+  */
+  const initialLiked = useRef(liked);
+  const initialSaved = useRef(saved);
+  const likeDelta = (liked ? 1 : 0) - (initialLiked.current ? 1 : 0);
+  const saveDelta = (saved ? 1 : 0) - (initialSaved.current ? 1 : 0);
+
   const onShare = useCallback(async () => {
     try {
       // Native Share-API von React Native - braucht kein Extra-Paket. Android
       // ignoriert `url` in Share.share, deshalb steckt der Link in `message`.
-      await Share.share({
+      const result = await Share.share({
         message: `${item.title} - ${formatPrice(item.price, item.currency)}\n${item.profile_url}`,
       });
-      sendInteraction(item.id, "profile_tap");
+      // Nur zaehlen, wenn wirklich geteilt wurde. Bei Abbruch liefert Android
+      // "dismissedAction" - das als Teilen zu buchen waere geschoenigt.
+      if (result.action === Share.sharedAction) {
+        setShareBump((n) => n + 1);
+        sendShare(item.id).catch(() => {});
+      }
     } catch {
-      // Abbruch durch den Nutzer ist kein Fehler, den man ihm zeigen muss.
+      // Abbruch ist kein Fehler, den man dem Nutzer zeigen muss.
     }
   }, [item]);
 
-  const onComments = useCallback(() => {
-    // Playerok hat keine Kommentare an Angeboten: Review haengt an einem
-    // abgeschlossenen Deal, und abrufbar sind ueber die API nur die eigenen
-    // (get_my_reviews). Das Gegenstueck ist Playeroks Chat mit dem Verkaeufer -
-    // der braucht aber den Konto-Login.
-    Alert.alert(
-      "Noch nicht verfügbar",
-      "Fragen an Verkäufer laufen über den Playerok-Chat. Dafür musst du dein Playerok-Konto verbinden - das kommt im nächsten Schritt.",
-    );
-  }, []);
+  const onAsk = useCallback(() => {
+    Alert.alert(t("ask.title"), t("ask.body"));
+  }, [t]);
 
   return (
     <View style={styles.rail}>
       <RailButton
         icon={liked ? "heart" : "heart-outline"}
-        label="Like"
+        label={t("rail.like")}
+        count={item.like_count + likeDelta}
         active={liked}
         activeColor={colors.like}
         onPress={onToggleLike}
       />
-      <RailButton icon="chatbubble-outline" label="Fragen" onPress={onComments} muted />
+      <RailButton icon="chatbubble-outline" label={t("rail.ask")} onPress={onAsk} muted />
       <RailButton
         icon={saved ? "bookmark" : "bookmark-outline"}
-        label={saved ? "Gemerkt" : "Merken"}
+        label={saved ? t("rail.saved") : t("rail.save")}
+        count={item.save_count + saveDelta}
         active={saved}
         activeColor={colors.accentLight}
         onPress={onToggleSave}
       />
-      <RailButton icon="arrow-redo-outline" label="Teilen" onPress={onShare} />
+      <RailButton
+        icon="arrow-redo-outline"
+        label={t("rail.share")}
+        count={item.share_count + shareBump}
+        onPress={onShare}
+      />
     </View>
   );
 }
@@ -79,6 +92,7 @@ export default function ActionRail({
 function RailButton({
   icon,
   label,
+  count,
   onPress,
   active,
   activeColor,
@@ -86,6 +100,7 @@ function RailButton({
 }: {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   label: string;
+  count?: number;
   onPress: () => void;
   active?: boolean;
   activeColor?: string;
@@ -106,7 +121,8 @@ function RailButton({
     onPress();
   }, [onPress, pop]);
 
-  const tint = active && activeColor ? activeColor : muted ? colors.textSecondary : colors.textPrimary;
+  const tint =
+    active && activeColor ? activeColor : muted ? colors.textSecondary : colors.textPrimary;
 
   return (
     <Pressable
@@ -123,7 +139,12 @@ function RailButton({
       >
         <Ionicons name={icon} size={25} color={tint} />
       </Animated.View>
-      <Text style={[styles.label, active && activeColor ? { color: activeColor } : null]}>
+      {count !== undefined && (
+        <Text style={[styles.count, active && activeColor ? { color: activeColor } : null]}>
+          {formatCount(count)}
+        </Text>
+      )}
+      <Text style={styles.label} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
@@ -136,7 +157,8 @@ const styles = StyleSheet.create({
   },
   btn: {
     alignItems: "center",
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
+    minWidth: 58,
   },
   pressed: {
     opacity: 0.6,
@@ -150,10 +172,16 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.22)",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: spacing.xs,
+    marginBottom: 3,
+  },
+  count: {
+    ...type.label,
+    fontSize: 12,
+    color: colors.textPrimary,
   },
   label: {
     ...type.label,
-    color: colors.textPrimary,
+    fontSize: 9,
+    color: colors.textMuted,
   },
 });

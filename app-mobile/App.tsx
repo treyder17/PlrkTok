@@ -10,23 +10,29 @@ import {
   Pressable,
   ViewToken,
 } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import FeedCard from "./FeedCard";
 import TabBar, { TabKey } from "./TabBar";
 import Placeholder from "./Placeholder";
 import ProfileScreen from "./ProfileScreen";
+import SearchScreen from "./SearchScreen";
 import {
   Listing,
   fetchFeed,
   sendInteraction,
   setSaved,
   fetchSavedIds,
+  setLiked,
+  fetchLikedIds,
 } from "./api";
+import { I18nProvider, useI18n } from "./i18n";
 import { colors, radius, spacing, type } from "./theme";
 
 const { height } = Dimensions.get("window");
 
 function Feed() {
+  const { t } = useI18n();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +56,9 @@ function Feed() {
     fetchSavedIds()
       .then((ids) => setSavedIds(new Set(ids)))
       .catch(() => {});
+    fetchLikedIds()
+      .then((ids) => setLikedIds(new Set(ids)))
+      .catch(() => {});
   }, []);
 
   const loadMore = useCallback(async () => {
@@ -62,7 +71,7 @@ function Feed() {
       setListings((prev) => [...prev, ...newListings]);
       setError(null);
     } catch (e) {
-      setError("Feed konnte nicht geladen werden.");
+      setError("feed.errorBody");
     } finally {
       isLoadingMore.current = false;
       setLoading(false);
@@ -82,14 +91,12 @@ function Feed() {
   const toggleLike = useCallback((id: string) => {
     setLikedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-        // Nur das Setzen melden - beim Abwaehlen waere ein zweites "like"
-        // ein falsches Signal an den Algorithmus.
-        sendInteraction(id, "like");
-      }
+      const willLike = !next.has(id);
+      if (willLike) next.add(id);
+      else next.delete(id);
+      // Eigener Endpoint statt /interact: nur so ist ein Like ein Zustand, der
+      // sich zuruecknehmen laesst und ueber alle Nutzer zaehlbar ist.
+      setLiked(id, willLike).catch(() => {});
       return next;
     });
   }, []);
@@ -139,13 +146,13 @@ function Feed() {
   if (error && listings.length === 0) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorTitle}>Keine Verbindung</Text>
-        <Text style={styles.errorText}>{error}</Text>
+        <Text style={styles.errorTitle}>{t("feed.errorTitle")}</Text>
+        <Text style={styles.errorText}>{t(error)}</Text>
         <Pressable
           onPress={retry}
           style={({ pressed }) => [styles.retryBtn, pressed && styles.retryBtnPressed]}
         >
-          <Text style={styles.retryText}>Erneut versuchen</Text>
+          <Text style={styles.retryText}>{t("feed.retry")}</Text>
         </Pressable>
       </View>
     );
@@ -164,9 +171,17 @@ function Feed() {
           onToggleSave={() => toggleSave(item.id)}
         />
       )}
-      pagingEnabled
+      /*
+        Kein pagingEnabled zusammen mit snapToInterval - die beiden beissen sich.
+        Entscheidend ist disableIntervalMomentum: ohne das traegt der Schwung
+        eines kraeftigen Wischers ueber mehrere Rasterpunkte hinweg, man landet
+        also zwei oder drei Angebote weiter. Damit ist pro Wisch genau ein
+        Rasterschritt erlaubt, wie bei TikTok.
+      */
       showsVerticalScrollIndicator={false}
       snapToInterval={height}
+      snapToAlignment="start"
+      disableIntervalMomentum
       decelerationRate="fast"
       onViewableItemsChanged={onViewableItemsChanged.current}
       viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
@@ -179,24 +194,27 @@ function Feed() {
 }
 
 function Screen({ tab }: { tab: TabKey }) {
+  const { t, lang } = useI18n();
   switch (tab) {
     case "home":
-      return <Feed />;
+      // key an der Sprache: bei Wechsel muss der Feed neu geladen werden,
+      // sonst bleiben die bereits geholten Titel in der alten Sprache stehen.
+      return <Feed key={lang} />;
     case "buyers":
       return (
         <Placeholder
           icon="people-outline"
-          title="Käufer*innen"
-          body="Hier siehst du, wer bei dir gekauft hat und welche Deals offen sind. Dafür muss dein Playerok-Konto verbunden sein."
+          title={t("buyers.title")}
+          body={t("buyers.body")}
         />
       );
     case "create":
       return (
         <Placeholder
           icon="add-circle-outline"
-          title="Angebot erstellen"
-          body="Neue Angebote legst du direkt bei Playerok an. Sobald dein Konto verbunden ist, geht das aus der App heraus."
-          actionLabel="Bei Playerok öffnen"
+          title={t("create.title")}
+          body={t("create.body")}
+          actionLabel={t("create.action")}
           actionUrl="https://playerok.com/"
         />
       );
@@ -204,8 +222,8 @@ function Screen({ tab }: { tab: TabKey }) {
       return (
         <Placeholder
           icon="mail-outline"
-          title="Posteingang"
-          body="Nachrichten von Käufern und Verkäufern, Zusagen und Bestätigungen. Läuft über Playeroks Chat und braucht dein verbundenes Konto."
+          title={t("inbox.title")}
+          body={t("inbox.body")}
         />
       );
     case "profile":
@@ -213,17 +231,44 @@ function Screen({ tab }: { tab: TabKey }) {
   }
 }
 
-export default function App() {
+function TopBar({ onSearch }: { onSearch: () => void }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
+      <Text style={styles.brand}>PlrkTok</Text>
+      <Pressable
+        onPress={onSearch}
+        hitSlop={12}
+        style={({ pressed }) => [styles.searchBtn, pressed && { opacity: 0.6 }]}
+      >
+        <Ionicons name="search" size={22} color={colors.textPrimary} />
+      </Pressable>
+    </View>
+  );
+}
+
+function Shell() {
   const [tab, setTab] = useState<TabKey>("home");
+  const [searching, setSearching] = useState(false);
 
   // SafeAreaProvider muss laut Expo-57-Doku an der Wurzel stehen, sonst liefert
   // useSafeAreaInsets in den Karten nur Nullen - und mit edgeToEdgeEnabled=true
   // rutschte der Inhalt unter die Systemleisten.
+  if (searching) {
+    return (
+      <View style={styles.root}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <SearchScreen onClose={() => setSearching(false)} />
+      </View>
+    );
+  }
+
   return (
-    <SafeAreaProvider>
       <View style={styles.root}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
         <Screen tab={tab} />
+        {/* Suche gehoert ueber den Feed, nicht ueber die Konto-Bildschirme. */}
+        {tab === "home" && <TopBar onSearch={() => setSearching(true)} />}
         {/*
           Die Leiste liegt ueber dem Feed statt darunter im Flex-Fluss: die
           Karten sind genau eine Bildschirmhoehe hoch, und snapToInterval haengt
@@ -234,6 +279,18 @@ export default function App() {
           <TabBar active={tab} onChange={setTab} />
         </View>
       </View>
+  );
+}
+
+export default function App() {
+  // SafeAreaProvider muss laut Expo-57-Doku an der Wurzel stehen, sonst liefert
+  // useSafeAreaInsets nur Nullen - und mit edgeToEdgeEnabled=true rutschte der
+  // Inhalt unter die Systemleisten.
+  return (
+    <SafeAreaProvider>
+      <I18nProvider>
+        <Shell />
+      </I18nProvider>
     </SafeAreaProvider>
   );
 }
@@ -242,6 +299,32 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.bgPrimary,
+  },
+  topBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  brand: {
+    ...type.title,
+    fontSize: 18,
+    color: colors.textPrimary,
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowRadius: 6,
+  },
+  searchBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   tabBarWrap: {
     position: "absolute",

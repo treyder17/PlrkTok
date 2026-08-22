@@ -68,3 +68,19 @@ export function formatPrice(value: number, currency: string): string {
   const symbol = currency === "RUB" ? "₽" : currency;
   return `${grouped} ${symbol}`;
 }
+
+/**
+ * Zaehler kurz halten, wie bei TikTok: 999 -> "999", 1500 -> "1,5K", 23000 -> "23K".
+ * Null wird zu einem Gedankenstrich, damit die Leiste nicht wie kaputt aussieht,
+ * wenn noch niemand reagiert hat.
+ */
+export function formatCount(n: number): string {
+  if (!n) return "–";
+  if (n < 1000) return String(n);
+  if (n < 10000) {
+    const v = (n / 1000).toFixed(1).replace(".", ",");
+    return `${v.endsWith(",0") ? v.slice(0, -2) : v}K`;
+  }
+  if (n < 1000000) return `${Math.round(n / 1000)}K`;
+  return `${(n / 1000000).toFixed(1).replace(".", ",")}M`;
+}
