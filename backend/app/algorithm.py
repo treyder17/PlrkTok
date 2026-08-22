@@ -64,6 +64,36 @@ def build_feed(db: Session, user_id: str, exclude_ids: list[str], limit: int = 2
     return feed[:limit]
 
 
+def count_engagement(db: Session, listing_ids: list[str]) -> dict[str, dict[str, int]]:
+    """
+    Like-, Merk- und Teilen-Zahlen ueber alle Nutzer, fuer die uebergebenen
+    Angebote.
+
+    Drei gruppierte Abfragen fuer die ganze Seite, nicht drei pro Angebot -
+    sonst waeren es bei 20 Angeboten 60 Abfragen pro Feed-Aufruf.
+    """
+    from .models import Like, SavedItem, ShareEvent
+
+    counts: dict[str, dict[str, int]] = {
+        lid: {"like_count": 0, "save_count": 0, "share_count": 0} for lid in listing_ids
+    }
+    if not listing_ids:
+        return counts
+
+    for model, key in ((Like, "like_count"), (SavedItem, "save_count"), (ShareEvent, "share_count")):
+        rows = (
+            db.query(model.listing_id, func.count(model.id))
+            .filter(model.listing_id.in_(listing_ids))
+            .group_by(model.listing_id)
+            .all()
+        )
+        for listing_id, n in rows:
+            if listing_id in counts:
+                counts[listing_id][key] = n
+
+    return counts
+
+
 def record_interaction(db: Session, user_id: str, listing: Listing, action: str, dwell_time_ms: int = 0):
     interaction = Interaction(
         user_id=user_id,
@@ -86,6 +116,8 @@ def record_interaction(db: Session, user_id: str, listing: Listing, action: str,
     # Simple Gewichts-Anpassung je nach Aktion
     delta = {
         "like": 0.15,
+        "save": 0.18,      # Merken ist ein etwas staerkeres Signal als ein Like
+        "share": 0.2,
         "profile_tap": 0.2,
         "view": 0.02,
         "skip": -0.08,

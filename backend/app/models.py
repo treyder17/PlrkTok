@@ -40,6 +40,36 @@ class Interaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Like(Base):
+    """Ein Like eines Users. Eigene Tabelle wie SavedItem, weil ein Like ein
+    Zustand ist (an/aus) - aus dem Interaction-Log liesse sich der aktuelle Stand
+    nur ueber das jeweils letzte Ereignis rekonstruieren."""
+    __tablename__ = "likes"
+    __table_args__ = (UniqueConstraint("user_id", "listing_id", name="uq_like_user_listing"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, index=True, nullable=False)
+    listing_id = Column(String, ForeignKey("listings.id"), index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ShareEvent(Base):
+    """Jedes Teilen als eigene Zeile. Anders als Like und Merken ist Teilen ein
+    Ereignis ohne Zustand - man kann es nicht zuruecknehmen, und mehrfach teilen
+    zaehlt mehrfach.
+
+    Bewusst eine eigene Tabelle statt einer Zaehlerspalte auf Listing:
+    Base.metadata.create_all fuegt bestehenden Tabellen keine Spalten hinzu, eine
+    neue Spalte wuerde auf dem bereits deployten Postgres also fehlen. Neue
+    Tabellen legt create_all dagegen an."""
+    __tablename__ = "share_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, index=True, nullable=False)
+    listing_id = Column(String, ForeignKey("listings.id"), index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class SavedItem(Base):
     """Vom User gemerktes Angebot. Eigene Tabelle statt eines Interaction-Eintrags,
     weil Merken ein Zustand ist (an/aus) und kein Ereignis - mit Interactions
