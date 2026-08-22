@@ -14,6 +14,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import FeedCard from "./FeedCard";
 import TabBar, { TabKey } from "./TabBar";
 import Placeholder from "./Placeholder";
+import ProfileScreen from "./ProfileScreen";
 import {
   Listing,
   fetchFeed,
@@ -208,13 +209,7 @@ function Screen({ tab }: { tab: TabKey }) {
         />
       );
     case "profile":
-      return (
-        <Placeholder
-          icon="person-outline"
-          title="Profil"
-          body="Verbinde dein Playerok-Konto, um deine Angebote, Bewertungen und dein Guthaben zu sehen."
-        />
-      );
+      return <ProfileScreen />;
   }
 }
 
